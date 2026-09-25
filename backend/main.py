@@ -1,10 +1,17 @@
 from fastapi import FastAPI
 from dotenv import load_dotenv
 import os
-from api.user_routes import router as user_router
 
 # Carica le variabili d'ambiente prima di inizializzare qualsiasi altra cosa
 load_dotenv()
+
+from api.user_routes import router as user_router
+from api.room_routes import router as room_router
+from db.database import engine, Base
+from models import entities
+
+# Genera le tabelle fisiche su SQLite leggendo entities.py
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Jammo API",
@@ -13,6 +20,7 @@ app = FastAPI(
 )
 
 app.include_router(user_router)
+app.include_router(room_router)
 
 #async: mentre il server aspetta che Groq risponda a un utente, non si blocca ma può rispondere alle richieste di altri utenti.
 @app.get("/")

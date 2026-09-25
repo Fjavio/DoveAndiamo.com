@@ -1,11 +1,6 @@
-"""
-Pydantic ci serve a due scopi:
-1. Controlla che le richieste inviate da Streamlit (o dalla piattaforma B2B) abbiano tutti i campi obbligatori.
-2. Obbligheremo Groq a rispondere esattamente con questa struttura JSON, impedendogli di inventare chiavi a caso o di scrivere testo libero quando ci serve un dato strutturato.
-"""
-
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field #Controlla che le richieste inviate da Streamlit/piattaforma B2B abbiano tutti i campi obbligatori: obbligheremo Groq a rispondere esattamente con questa struttura JSON
 from typing import List, Optional
+from datetime import datetime
 
 # ==========================================
 # Richieste dal Frontend
@@ -17,6 +12,24 @@ class UserMessageRequest(BaseModel):
     room_id: str = Field(..., description="ID della stanza virtuale")
     message: str = Field(..., description="Il messaggio in linguaggio naturale")
 
+class RoomCreateRequest(BaseModel):
+    """Payload inviato dall'organizzatore per creare una nuova stanza"""
+    citta: str = Field(..., description="Città dell'uscita (es. 'Napoli')")
+    data: datetime = Field(..., description="Data e ora indicativa dell'uscita")
+    occasione: Optional[str] = Field(None, description="Es. 'Compleanno di Mario'")
+
+class RoomResponse(BaseModel):
+    """Risposta del server con i dettagli della stanza e il codice invito"""
+    id: str
+    codice_invito: str
+    citta: str
+    data: datetime
+    occasione: Optional[str]
+    scadenza: datetime
+
+    class Config:
+        orm_mode = True  # Permette a Pydantic di leggere direttamente l'oggetto SQLAlchemy
+
 # ==========================================
 # MODELLI DI OUTPUT (Estratti dall'LLM)
 # ==========================================
@@ -26,8 +39,11 @@ class ExtractedProfile(BaseModel):
     budget_max: Optional[float] = Field(
         None, description="Budget massimo in euro. Null se non specificato."
     )
-    orario_inizio: Optional[str] = Field(
-        None, description="Orario di disponibilità nel formato HH:MM (es. '21:00')."
+    disponibile_da: Optional[str] = Field(
+        None, description="Orario di inizio disponibilità nel formato HH:MM (es. '18:30')."
+    )
+    disponibile_a: Optional[str] = Field(
+        None, description="Orario limite per il rientro nel formato HH:MM (es. '23:30')."
     )
     restrizioni_alimentari: List[str] = Field(
         default_factory=list, description="Lista di restrizioni (es. ['vegetariano', 'celiaco'])."
@@ -38,13 +54,19 @@ class ExtractedProfile(BaseModel):
     mezzo_trasporto: Optional[str] = Field(
         None, description="Mezzo utilizzato (es. 'auto', 'mezzi pubblici', 'piedi')."
     )
+    mezzi_esclusi: List[str] = Field(
+        default_factory=list, description="Mezzi che l'utente NON vuole o non può prendere (es. ['metro', 'piedi'])."
+    )
+    importanza_distanza: Optional[str] = Field(
+        None, description="Quanto conta non allontanarsi. Valori: 'bassa', 'media', 'alta'."
+    )
     preferenze_aggiuntive: List[str] = Field(
-        default_factory=list, description="Desideri extra legati all'atmosfera, tipo di locale o servizi (es. 'musica dal vivo', 'romantico', 'tranquillo')."
+        default_factory=list, description="Desideri extra legati all'atmosfera, tipo di locale o servizi, inclusi suggerimenti su DOVE andare (es. 'musica dal vivo', 'romantico', 'tranquillo', 'al centro storico')."
     )
     
     # Questo campo implementa il requisito RF04 (Richiesta Chiarimento)
     richiesta_chiarimento: Optional[str] = Field(
-        None, description="Testo della domanda da fare all'utente SE E SOLO SE la zona_partenza è ambigua."
+        None, description="Domanda da porre all'utente in caso di contraddizioni logiche o luoghi incomprensibili."
     )
 
 class LLMResponse(BaseModel):

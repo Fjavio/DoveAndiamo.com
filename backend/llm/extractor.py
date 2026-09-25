@@ -6,8 +6,7 @@ from models.schemas import ExtractedProfile, LLMResponse
 # Inizializzazione del client asincrono Groq
 client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 
-# Modello consigliato su Groq per velocità e capacità di reasoning
-GROQ_MODEL = "llama-3.3-70b-versatile"
+GROQ_MODEL = "qwen/qwen3.8-27b"
 
 SYSTEM_PROMPT_EXTRACTION = """
 Sei il motore di Natural Language Understanding di "Jammo", un sistema che organizza uscite di gruppo.
@@ -15,17 +14,22 @@ Il tuo compito è estrarre le preferenze e i vincoli espressi da un utente in li
 
 Devi estrarre i seguenti campi:
 - "budget_max": numero decimale o intero indicante la spesa massima in euro (es. 25.0). Null se non specificato.
-- "orario_inizio": orario nel formato "HH:MM" (es. "20:30", "21:00"). Null se non specificato.
+- "disponibile_da": orario "HH:MM" (es. "18:30"). Null se non specificato.
+- "disponibile_a": orario "HH:MM" limite per il rientro (es. "23:30"). Null se non specificato.
 - "restrizioni_alimentari": lista di stringhe con vincoli alimentari (es. ["vegetariano", "celiaco"]). Lista vuota se non presenti.
 - "mezzo_trasporto": stringa indicante il mezzo (es. "auto", "metro", "mezzi pubblici", "piedi"). Null se non specificato.
-- "zona_partenza": quartiere o zona nota della città (es. "Fuorigrotta", "Vomero", "Centro Storico").
-- "preferenze_aggiuntive": lista di stringhe che cattura qualsiasi desiderio extra sull'atmosfera, il tipo di serata o i servizi (es. ["posto romantico", "musica dal vivo", "economico", "tranquillo", "all'aperto"]). Lista vuota se non presenti.
+- "mezzi_esclusi": lista di mezzi che l'utente NON vuole prendere (es. ["piedi", "autobus"]).
+- "zona_partenza": indirizzo o quartiere esatto da cui parte l'utente. Null se non specificato.
+- "importanza_distanza": stringa tra "bassa", "media", "alta". Deducila se l'utente esprime quanto è disposto a spostarsi (es. "non voglio allontanarmi" -> "alta"). Null se non deducibile.
+- "preferenze_aggiuntive": lista di stringhe che cattura qualsiasi desiderio extra sull'atmosfera, il tipo di serata, i servizi o un idea di dove andare (es. ["posto romantico", "musica dal vivo", "economico", "tranquillo", "all'aperto", "zona sud-est è bella"]). Lista vuota se non presenti.
 - "richiesta_chiarimento": stringa con una domanda cortese da porre all'utente. 
 
 REGOLE CRITICHE:
-1. Se l'utente indica un luogo generico, informale o non mappabile a un quartiere (es. "sto da nonna", "a casa mia", "in centro"), lascia "zona_partenza": null e scrivi una breve domanda in "richiesta_chiarimento" chiedendo di specificare la zona o il quartiere.
-2. Se la zona di partenza è chiara o assente (non menzionata affatto), "richiesta_chiarimento" DEVE essere null.
-3. Fai estrema attenzione alle negazioni (es. "non sono celiaco", "basta che non sia pesce").
+1. CONTRADDIZIONI LOGICHE: Se il messaggio contiene palesi contraddizioni irrisolvibili (es. "sono vegano ma voglio una braceria") o richieste del tutto incomprensibili, usa "richiesta_chiarimento" per chiedere educatamente di risolvere il conflitto.
+2. LUOGHI INCOMPRENSIBILI: Se l'utente indica un luogo generico o informale (es. "sto da nonna", "a casa mia"), lascia "zona_partenza": null e scrivi una breve domanda in "richiesta_chiarimento" chiedendo di specificare la zona o il quartiere.
+3. LE OMISSIONI NON SONO ERRORI: Se un dato (es. zona di partenza, budget, orari) è semplicemente omesso o non menzionato, NON chiedere MAI chiarimenti. Lascia il campo null. L'utente non è obbligato a specificare tutto.
+4. DESTINAZIONE VS PARTENZA: Distingui la "zona_partenza" dalla destinazione desiderata. Se l'utente suggerisce DOVE vuole andare (es. "propongo una zona fuori dal centro"), salvalo in "preferenze_aggiuntive" e NON chiedere chiarimenti sulla zona di partenza se omette da dove parte. Se la zona di partenza è chiara o assente (non menzionata affatto), "richiesta_chiarimento" DEVE essere null.
+5. Fai estrema attenzione alle negazioni (es. "non sono celiaco", "basta che non sia pesce" -> restrizioni, "no auto" -> mezzi_esclusi).
 """
 
 SYSTEM_PROMPT_REFLECTION = """

@@ -32,10 +32,13 @@ jammo_project/
     │   ├── weather_client.py    # (RF08) Chiamate a OpenWeather
     │   ├── routing_client.py    # (RF09) Chiamate a OpenRouteService per tempi e distanze
     │   └── places_db.py         # (RF07) Interazione con ChromaDB per filtrare i locali
+    |
+    ├── db/                      # Configurazione del motore del database
+    │   └── database.py          # Connessione SQLite e SessionLocal
     │
     ├── models/                  # Definizione delle strutture dati
     │   ├── schemas.py           # Modelli Pydantic per validare i JSON in entrata/uscita
-    │   └── entities.py          # Modelli ORM per il salvataggio su database relazionale
+    │   └── entities.py          # Modelli ORM SQLAlchemy (Stanza, Partecipante)
     │
     └── workers/
         └── cleanup_task.py      # (RF11, RNF3) Job in background per cancellare le stanze scadute
