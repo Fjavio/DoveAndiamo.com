@@ -14,9 +14,10 @@ class UserMessageRequest(BaseModel):
 
 class RoomCreateRequest(BaseModel):
     """Payload inviato dall'organizzatore per creare una nuova stanza"""
-    citta: str = Field(..., description="Città dell'uscita (es. 'Napoli')")
+    citta: str = Field(..., description="Città dell'uscita")
     data: datetime = Field(..., description="Data e ora indicativa dell'uscita")
-    occasione: Optional[str] = Field(None, description="Es. 'Compleanno di Mario'")
+    occasione: Optional[str] = Field(None, description="Occasione dell'uscita")
+    creatore: str = Field(..., description="Nickname di chi crea la stanza")
 
 class RoomResponse(BaseModel):
     """Risposta del server con i dettagli della stanza e il codice invito"""
@@ -26,6 +27,7 @@ class RoomResponse(BaseModel):
     data: datetime
     occasione: Optional[str]
     scadenza: datetime
+    organizzatore: str
 
     class Config:
         orm_mode = True  # Permette a Pydantic di leggere direttamente l'oggetto SQLAlchemy

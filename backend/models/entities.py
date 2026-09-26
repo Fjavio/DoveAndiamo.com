@@ -16,6 +16,8 @@ class Stanza(Base):
     data = Column(DateTime, nullable=False)
     occasione = Column(String, nullable=True)
     scadenza = Column(DateTime, nullable=False)
+    
+    organizzatore = Column(String, nullable=False)
 
     # Relazione di COMPOSIZIONE: se muore la stanza, muoiono i partecipanti (Privacy GDPR)
     partecipanti = relationship("Partecipante", back_populates="stanza", cascade="all, delete-orphan")

@@ -6,6 +6,7 @@ from datetime import timedelta
 from db.database import get_db
 from models.entities import Stanza
 from models.schemas import RoomCreateRequest, RoomResponse
+from models.entities import Partecipante
 
 router = APIRouter(prefix="/rooms", tags=["Rooms"])
 
@@ -35,7 +36,8 @@ def create_room(request: RoomCreateRequest, db: Session = Depends(get_db)):
             data=request.data,
             occasione=request.occasione,
             scadenza=scadenza_calcolata,
-            codice_invito=codice
+            codice_invito=codice,
+            organizzatore=request.creatore
         )
         
         db.add(nuova_stanza)
@@ -55,3 +57,9 @@ def get_room_by_code(codice: str, db: Session = Depends(get_db)):
     if not stanza:
         raise HTTPException(status_code=404, detail="Stanza inesistente")
     return stanza
+
+@router.get("/{room_id}/participants")
+def get_room_participants(room_id: str, db: Session = Depends(get_db)):
+    """Restituisce la lista di tutti i partecipanti salvati in una specifica stanza"""
+    partecipanti = db.query(Partecipante).filter(Partecipante.stanza_id == room_id).all()
+    return partecipanti
