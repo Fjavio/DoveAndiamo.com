@@ -7,6 +7,7 @@ from db.database import get_db
 from models.entities import Stanza
 from models.schemas import RoomCreateRequest, RoomResponse
 from models.entities import Partecipante
+from core.solver import ItinerarySolver
 
 router = APIRouter(prefix="/rooms", tags=["Rooms"])
 
@@ -63,3 +64,19 @@ def get_room_participants(room_id: str, db: Session = Depends(get_db)):
     """Restituisce la lista di tutti i partecipanti salvati in una specifica stanza"""
     partecipanti = db.query(Partecipante).filter(Partecipante.stanza_id == room_id).all()
     return partecipanti
+
+@router.get("/{room_id}/proposals")
+def generate_proposals(room_id: str, db: Session = Depends(get_db)):
+    #organizzatore calcola l'itinerario finale
+    stanza = db.query(Stanza).filter(Stanza.id == room_id).first()
+    if not stanza:
+        raise HTTPException(status_code=404, detail="Stanza non trovata")
+        
+    partecipanti = db.query(Partecipante).filter(Partecipante.stanza_id == room_id).all()
+    if not partecipanti:
+        raise HTTPException(status_code=400, detail="La stanza è vuota")
+        
+    solver = ItinerarySolver()
+    risultato = solver.elabora_proposta(stanza, partecipanti)
+    
+    return risultato

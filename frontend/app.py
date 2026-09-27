@@ -235,10 +235,51 @@ else:
                             st.error("Errore dal server.")
                     except Exception:
                         st.error("Impossibile connettersi al Backend.")
-                        
+
         # --- SEZIONE ORGANIZZATORE ---
         if stanza_corrente.get('organizzatore') == st.session_state.utente_loggato:
             st.divider()
             st.markdown("### 👑 Pannello Organizzatore")
-            if st.button("🪄 Calcola Itinerario (Avvia Solver)", type="primary", use_container_width=True):
-                st.info("Chiamata a GET /proposals/{room_id} in costruzione...")
+            if st.button("🪄 Calcola Itinerario Reale", type="primary", use_container_width=True):
+                with st.spinner("Incrocio vincoli, controllo meteo e calcolo stradale in corso..."):
+                    try:
+                        res_solver = requests.get(f"{BASE_URL}/rooms/{stanza_corrente['id']}/proposals")
+                        if res_solver.status_code == 200:
+                            dati = res_solver.json()
+                            
+                            st.success("Calcolo completato!")
+                            st.markdown("## 🎯 La Proposta di Jammo")
+                            
+                            # Resoconto dei Vincoli
+                            vincoli = dati.get('vincoli_gruppo', {})
+                            
+                            # Se i vincoli sono stati rilassati, mostriamo il messaggio di compromesso
+                            if vincoli.get('vincoli_rilassati'):
+                                st.warning(dati.get('esito'))
+                                budget_mostrato = f"{vincoli['budget_cap']}€ (lievemente superato per trovare opzioni valide)"
+                            else:
+                                budget_mostrato = f"{vincoli['budget_cap']}€"
+
+                            st.info(
+                                f"⏱️ **Si esce alle:** {vincoli['orario_comune']['da']}\n\n"
+                                f"💰 **Budget Max concordato:** {budget_mostrato}\n\n"
+                                f"🥗 **Diete/Intolleranze rispettate:** {', '.join(vincoli['restrizioni']).capitalize() or 'Nessuna'}\n\n"
+                                f"🌧️ **Meteo previsto:** {'Pioverà (Locali all\'aperto esclusi)' if vincoli['piovera'] else 'Sereno'}"
+                            )
+                            
+                            # Risultati Locali
+                            locali = dati.get('locali_proposti', [])
+                            if not locali:
+                                st.error("😭 **Nessun locale trovato!** I vincoli incrociati sono troppo stringenti (neanche allentando il budget si sono trovate opzioni).")
+                            else:
+                                st.markdown("### 🏆 I migliori locali per voi:")
+                                for i, loc in enumerate(locali[:3]): 
+                                    with st.container(border=True):
+                                        st.markdown(f"#### {i+1}. {loc['nome']} ({loc['tipo'].capitalize()})")
+                                        st.write(f"📍 **Zona:** {loc['zona']} | 💸 **Costo stimato:** {loc['costo_medio']}€")
+                                        testo_distanza = f"{loc['minuti_di_guida']} minuti di guida" if loc['minuti_di_guida'] > 0 else "N/D (Punti di partenza non specificati)"
+                                        st.caption(f"🚗 Distanza massima: {testo_distanza}")
+                        else:
+                            st.error(f"Errore: {res_solver.text}")
+                    except Exception:
+                        st.error("Impossibile contattare il Solver.")
