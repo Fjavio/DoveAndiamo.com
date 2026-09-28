@@ -6,6 +6,9 @@ from dotenv import load_dotenv
 # Carica le variabili dal file .env nella memoria del sistema
 load_dotenv()
 
+# CACHE GLOBALE IN MEMORIA
+_places_cache = {}
+
 class PlacesDatabase:
     """Boundary per il reperimento di locali tramite Google Places API NEW (Pattern ECB)"""
     
@@ -17,20 +20,33 @@ class PlacesDatabase:
             print("ATTENZIONE: Inserire la API Key di Google in places_db.py!")
             return []
 
-        # 1. Costruiamo la query semantica per la New API
+        # CONTROLLO CACHE
+        chiave_cache = f"{citta}_{desideri_extra}_{max_locali}"
+        if chiave_cache in _places_cache:
+            print(f"Hit Cache! Recupero locali per: {chiave_cache}")
+            return _places_cache[chiave_cache]
+
+        # se non in cache, chiamo google: costruiamo la query semantica per la New API
         if desideri_extra:
             testo_ricerca = f"ristoranti locali {desideri_extra} a {citta}"
         else:
             testo_ricerca = f"migliori ristoranti pub pizzerie a {citta}"
 
-        # Endpoint della versione NEW
+        # Endpoint google Places NEW API
         url = "https://places.googleapis.com/v1/places:searchText"
-        
-        # La nuova API richiede esplicitamente di dichiarare quali campi vogliamo (FieldMask)
+
+        """
         headers = {
             "Content-Type": "application/json",
             "X-Goog-Api-Key": self.api_key,
             "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.priceLevel,places.rating,places.primaryType,places.types"
+        }"""
+
+        # aggiunta places.regularOpeningHours per ottenere informazioni sugli orari di apertura
+        headers = {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": self.api_key,
+            "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.priceLevel,places.rating,places.primaryType,places.types,places.regularOpeningHours"
         }
         
         payload = {
@@ -67,12 +83,8 @@ class PlacesDatabase:
                     types = place.get("types", [])
                     primary_type = place.get("primaryType", "")
                     
-                    tipo = "ristorante"
-                    if "pizza" in primary_type or "pizza" in nome.lower():
-                        tipo = "pizzeria"
-                    elif "bar" in primary_type or "pub" in primary_type:
-                        tipo = "pub"
-                        
+                    tipo = "pizzeria" if "pizza" in primary_type or "pizza" in nome.lower() else "pub" if "bar" in primary_type or "pub" in primary_type else "ristorante"
+                    
                     # Logica di stubbing/mocking per faciltare i test
                     """
                     menu = ["normale"]
@@ -88,17 +100,22 @@ class PlacesDatabase:
                     """
 
                     # Logica reale: Deleghiamo la scrematura dietetica alla ricerca semantica a monte
-                    menu = []
 
+                    # Estraiamo gli orari se disponibili
+                    orari_raw = place.get("regularOpeningHours", {}).get("periods", [])
+                    
                     locali_reali.append({
                         "nome": nome,
                         "tipo": tipo,
                         "zona": indirizzo,
                         "costo_medio": costo_medio,
-                        "all_aperto": "park" in types or random.random() > 0.7,
-                        "menu": menu,
-                        "rating": place.get("rating", 0.0)
+                        "all_aperto": any(t in types for t in ["park", "campground", "zoo", "amusement_park"]), #"all_aperto": "park" in types,
+                        "rating": place.get("rating", 0.0),
+                        "orari_google": orari_raw
                     })
+
+                # salviamo in cache
+                _places_cache[chiave_cache] = locali_reali
             else:
                 print(f"Errore dalla New API: {res.status_code} - {res.text}")
                 

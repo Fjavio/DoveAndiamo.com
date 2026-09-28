@@ -249,6 +249,9 @@ else:
                             
                             st.success("Calcolo completato!")
                             st.markdown("## 🎯 La Proposta di Jammo")
+
+                            #messaggio spiegativo del LLM
+                            st.info(f"🤖 **Jammo dice:**\n\n*{dati.get('messaggio_ia', '')}*")
                             
                             # Resoconto dei Vincoli
                             vincoli = dati.get('vincoli_gruppo', {})

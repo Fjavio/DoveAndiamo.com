@@ -92,3 +92,41 @@ async def extract_user_profile(user_message: str) -> LLMResponse:
         profile=profile,
         message_to_user="Preferenze acquisite con successo."
     )
+
+async def generate_group_explanation(vincoli: dict, locali: list) -> str:
+    """Trasforma i risultati del Solver in un messaggio chiaro all'utente"""
+    
+    if not locali:
+        return "Purtroppo le vostre esigenze incrociate erano davvero troppo stringenti e non ho trovato locali compatibili. Proviamo ad allargare un po' i requisiti!"
+
+    nomi_locali = ", ".join([l['nome'] for l in locali])
+    desideri = ", ".join(vincoli.get('desideri_soddisfatti', []))
+    
+    # NOVITÀ: Controlliamo se il Solver ha rilassato i vincoli
+    rilassati = vincoli.get('vincoli_rilassati', False)
+    
+    # Prepariamo un'istruzione aggiuntiva per il prompt se c'è stato compromesso
+    istruzione_compromesso = ""
+    if rilassati:
+        istruzione_compromesso = "\n- NOTA PER L'IA: Per trovare questi locali è stato necessario sforare leggermente il budget minimo del gruppo (+20%). Menziona con molta leggerezza e simpatia che hai dovuto fare una piccolissima eccezione economica pur di salvare la serata e rispettare tutti i gusti, ma fallo sembrare un successo!"
+
+    prompt = f"""
+    Sei 'Jammo', un simpatico e caloroso organizzatore di uscite AI. Hai appena calcolato un itinerario.
+    Dati elaborati dal tuo algoritmo interno:
+    - Locali scelti: {nomi_locali}
+    - Preferenze semantiche del gruppo considerate: {desideri if desideri else 'Uscita classica'}{istruzione_compromesso}
+    
+    Scrivi un allegro e breve messaggio (max 3 frasi) per il gruppo.
+    Spiega con entusiasmo perché questi locali sono un ottimo compromesso per le loro atmosfere e gusti. 
+    REGOLA CRITICA: NON rivelare MAI i vincoli specifici di una persona, non parlare mai di cifre esatte in euro, e non dire esplicitamente le intolleranze per rispettare la privacy. Sii un bravo organizzatore e focus sulla positività!
+    """
+    
+    try:
+        response = await client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7, # Alziamo un po' la creatività per questo task discorsivo
+        )
+        return response.choices[0].message.content
+    except Exception:
+        return "Ecco la proposta perfetta calcolata in base ai vostri vincoli incrociati!"

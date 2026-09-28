@@ -8,6 +8,7 @@ from models.entities import Stanza
 from models.schemas import RoomCreateRequest, RoomResponse
 from models.entities import Partecipante
 from core.solver import ItinerarySolver
+from llm.extractor import generate_group_explanation
 
 router = APIRouter(prefix="/rooms", tags=["Rooms"])
 
@@ -66,7 +67,7 @@ def get_room_participants(room_id: str, db: Session = Depends(get_db)):
     return partecipanti
 
 @router.get("/{room_id}/proposals")
-def generate_proposals(room_id: str, db: Session = Depends(get_db)):
+async def generate_proposals(room_id: str, db: Session = Depends(get_db)):
     #organizzatore calcola l'itinerario finale
     stanza = db.query(Stanza).filter(Stanza.id == room_id).first()
     if not stanza:
@@ -78,5 +79,12 @@ def generate_proposals(room_id: str, db: Session = Depends(get_db)):
         
     solver = ItinerarySolver()
     risultato = solver.elabora_proposta(stanza, partecipanti)
+    
+    # Chiamata al LLM per la spiegazione finale
+    spiegazione = await generate_group_explanation(
+        risultato.get("vincoli_gruppo", {}), 
+        risultato.get("locali_proposti", [])
+    )
+    risultato["messaggio_ia"] = spiegazione
     
     return risultato

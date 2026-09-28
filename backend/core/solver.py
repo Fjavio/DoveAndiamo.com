@@ -60,38 +60,45 @@ class ItinerarySolver:
                     restrizioni.update([r.lower() for r in p.restrizioni_alimentari])
         return list(restrizioni)
 
-    """
     def elabora_proposta(self, stanza: any, partecipanti: List[any]) -> Dict:
         # Calcolo Vincoli di Gruppo
         orari_comuni = self._calcola_intersezione_orari(stanza, partecipanti)
         budget_max = self._calcola_budget_gruppo(partecipanti)
         restrizioni = self._estrai_restrizioni_comuni(partecipanti)
-
-        # Estraiamo tutti i "desideri" (es. romantico, musica) per fare una ricerca mirata
+        
+        # Uniamo desideri e restrizioni dietetiche per il motore semantico di Google
         desideri = set()
         for p in partecipanti:
             if p.preferenze_aggiuntive:
                 desideri.update(p.preferenze_aggiuntive)
-        query_desideri = " ".join(desideri)
-
+        
+        # Aggiungiamo esplicitamente le diete alla query di ricerca
+        termini_ricerca = list(desideri) + restrizioni
+        query_desideri = " ".join(termini_ricerca)
+        
         # Chiamata Servizi Esterni
         pioverà = self.weather_client.check_rain(stanza.citta, stanza.data)
         locali_candidati = self.places_db.get_all_places(stanza.citta, desideri_extra=query_desideri)
         
-        # Filtraggio - PRIMA PASSATA (Vincoli Rigidi)
+        # Primo Filtraggio (Solo Vincoli Matematici Rigidi)
         locali_validi_strict = []
         for locale in locali_candidati:
             # Meteo (Intoccabile)
             if pioverà and locale.get("all_aperto"): continue
-            # Diete (Intoccabili)
-            menu_locale = [m.lower() for m in locale.get("menu", [])]
-            if "vegano" in restrizioni and "vegano" not in menu_locale: continue
-            if "vegetariano" in restrizioni and ("vegetariano" not in menu_locale and "vegano" not in menu_locale): continue
-            if "celiaco" in restrizioni and "celiaci" not in menu_locale: continue
             
             # Budget Rigido
             if budget_max and locale.get("costo_medio", 0) > budget_max:
                 continue 
+
+            if orari_comuni:
+                aperto = self._is_locale_aperto(
+                    locale.get("orari_google", []), 
+                    stanza.data, 
+                    orari_comuni["inizio"], 
+                    orari_comuni["fine"]
+                )
+                if not aperto:
+                    continue
                 
             locali_validi_strict.append(locale)
 
@@ -99,27 +106,21 @@ class ItinerarySolver:
         messaggio_compromesso = "Calcolo completato nel rispetto di tutti i vincoli."
         locali_finali = locali_validi_strict
 
-        # Filtraggio - SECONDA PASSATA (Rilassamento Vincolo Budget)
-        # Se la prima passata ha fallito, allentiamo il budget del 20%
+        # Secondo Filtraggio (Rilassamento Vincolo Budget)
         if not locali_validi_strict and budget_max:
-            budget_tollerato = budget_max * 1.20 # +20% di tolleranza
+            budget_tollerato = budget_max * 1.20 
             locali_validi_relax = []
             
             for locale in locali_candidati:
                 if pioverà and locale.get("all_aperto"): continue
-                menu_locale = [m.lower() for m in locale.get("menu", [])]
-                if "vegano" in restrizioni and "vegano" not in menu_locale: continue
-                if "vegetariano" in restrizioni and ("vegetariano" not in menu_locale and "vegano" not in menu_locale): continue
-                if "celiaco" in restrizioni and "celiaci" not in menu_locale: continue
                 
-                # Applichiamo il Budget Rilassato
                 if locale.get("costo_medio", 0) <= budget_tollerato:
                     locali_validi_relax.append(locale)
 
             if locali_validi_relax:
                 locali_finali = locali_validi_relax
                 vincoli_rilassati = True
-                messaggio_compromesso = "⚠️ È stato necessario applicare un piccolo compromesso economico rispetto al budget più basso per trovare opzioni valide adatte alle restrizioni alimentari del gruppo."
+                messaggio_compromesso = "⚠️ È stato necessario applicare un piccolo compromesso economico per trovare opzioni compatibili con tutte le vostre richieste."
 
         # Aggiunta dei tempi di percorrenza
         for locale in locali_finali:
@@ -138,84 +139,6 @@ class ItinerarySolver:
                 "orario_comune": orari_comuni,
                 "budget_cap": budget_max,
                 "restrizioni": restrizioni,
-                "desideri_soddisfatti": list(desideri),
-                "piovera": pioverà,
-                "vincoli_rilassati": vincoli_rilassati # Flag per il frontend
-            },
-            "locali_proposti": locali_finali,
-            "esito": messaggio_compromesso
-        }
-    """
-
-    def elabora_proposta(self, stanza: any, partecipanti: List[any]) -> Dict:
-        # 1. Calcolo Vincoli di Gruppo
-        orari_comuni = self._calcola_intersezione_orari(stanza, partecipanti)
-        budget_max = self._calcola_budget_gruppo(partecipanti)
-        restrizioni = self._estrai_restrizioni_comuni(partecipanti)
-        
-        # Uniamo desideri e restrizioni dietetiche per il motore semantico di Google
-        desideri = set()
-        for p in partecipanti:
-            if p.preferenze_aggiuntive:
-                desideri.update(p.preferenze_aggiuntive)
-        
-        # Aggiungiamo esplicitamente le diete alla query di ricerca
-        termini_ricerca = list(desideri) + restrizioni
-        query_desideri = " ".join(termini_ricerca)
-        
-        # 2. Chiamata Servizi Esterni
-        pioverà = self.weather_client.check_rain(stanza.citta, stanza.data)
-        locali_candidati = self.places_db.get_all_places(stanza.citta, desideri_extra=query_desideri)
-        
-        # 3. Filtraggio - PRIMA PASSATA (Solo Vincoli Matematici Rigidi)
-        locali_validi_strict = []
-        for locale in locali_candidati:
-            # Meteo (Intoccabile)
-            if pioverà and locale.get("all_aperto"): continue
-            
-            # Budget Rigido
-            if budget_max and locale.get("costo_medio", 0) > budget_max:
-                continue 
-                
-            locali_validi_strict.append(locale)
-
-        vincoli_rilassati = False
-        messaggio_compromesso = "Calcolo completato nel rispetto di tutti i vincoli."
-        locali_finali = locali_validi_strict
-
-        # 4. Filtraggio - SECONDA PASSATA (Rilassamento Vincolo Budget)
-        if not locali_validi_strict and budget_max:
-            budget_tollerato = budget_max * 1.20 
-            locali_validi_relax = []
-            
-            for locale in locali_candidati:
-                if pioverà and locale.get("all_aperto"): continue
-                
-                if locale.get("costo_medio", 0) <= budget_tollerato:
-                    locali_validi_relax.append(locale)
-
-            if locali_validi_relax:
-                locali_finali = locali_validi_relax
-                vincoli_rilassati = True
-                messaggio_compromesso = "⚠️ È stato necessario applicare un piccolo compromesso economico per trovare opzioni compatibili con tutte le vostre richieste."
-
-        # 5. Aggiunta dei tempi di percorrenza
-        for locale in locali_finali:
-            tempi = []
-            for p in partecipanti:
-                if p.zona_partenza:
-                    minuti = self.routing_client.calcola_tempo_percorso(p.zona_partenza, locale["zona"], stanza.citta)
-                    tempi.append(minuti)
-            locale["minuti_di_guida"] = max(tempi) if tempi else 0
-
-        # 6. Ordinamento (i più vicini per tutti)
-        locali_finali.sort(key=lambda x: x.get("minuti_di_guida", 999))
-
-        return {
-            "vincoli_gruppo": {
-                "orario_comune": orari_comuni,
-                "budget_cap": budget_max,
-                "restrizioni": restrizioni,
                 "desideri_soddisfatti": termini_ricerca, 
                 "piovera": pioverà,
                 "vincoli_rilassati": vincoli_rilassati
@@ -223,3 +146,56 @@ class ItinerarySolver:
             "locali_proposti": locali_finali,
             "esito": messaggio_compromesso
         }
+
+    def _is_locale_aperto(self, orari_google: list, data_uscita: str, ora_inizio: str, ora_fine: str) -> bool:
+
+        """Verifica matematicamente se un locale è aperto nell'intervallo richiesto."""
+        
+        # Graceful Degradation: se Google non fornisce orari, non scartiamo il locale
+        if not orari_google:
+            return True 
+
+        try:
+            data_obj = datetime.strptime(data_uscita, "%Y-%m-%d") # Adatta al formato che usi per stanza.data
+            
+            # Python: 0=Lunedì, 6=Domenica -> Google Places: 0=Domenica, 1=Lunedì
+            giorno_google = (data_obj.weekday() + 1) % 7
+            
+            # Conversione orari utente in minuti partendo da mezzanotte
+            h_in, m_in = map(int, ora_inizio.split(":"))
+            h_out, m_out = map(int, ora_fine.split(":"))
+            target_start = h_in * 60 + m_in
+            target_end = h_out * 60 + m_out
+            
+            # Se l'uscita finisce dopo mezzanotte (es. 20:00 - 02:00)
+            if target_end <= target_start:
+                target_end += 24 * 60
+                
+        except Exception as e:
+            print(f"Errore parsing orari, salto filtro: {e}")
+            return True
+
+        # Scansione matrice orari di Google
+        for periodo in orari_google:
+            apertura = periodo.get("open", {})
+            chiusura = periodo.get("close", {})
+            
+            # Troviamo il turno di apertura per il giorno richiesto
+            if apertura.get("day") == giorno_google:
+                open_min = apertura.get("hour", 0) * 60 + apertura.get("minute", 0)
+                
+                # Se manca la chiusura, il locale è aperto 24/24h
+                if not chiusura:
+                    return True
+                    
+                close_min = chiusura.get("hour", 0) * 60 + chiusura.get("minute", 0)
+                
+                # Se il locale chiude dopo mezzanotte (es. apre 18:00, chiude 02:00)
+                if close_min <= open_min:
+                    close_min += 24 * 60 
+                
+                # Condizione di validità: l'evento deve essere contenuto nell'apertura
+                if target_start >= open_min and target_end <= close_min:
+                    return True
+                    
+        return False # Locale esaminato ma chiuso nell'orario richiesto

@@ -5,6 +5,9 @@ from dotenv import load_dotenv
 # Carica le variabili dal file .env nella memoria del sistema
 load_dotenv()
 
+# CACHE GLOBALE IN MEMORIA
+_routing_cache = {}
+
 class RoutingClient:
     """Boundary per il Routing Reale tramite Google Directions API (Pattern ECB)"""
     
@@ -17,7 +20,11 @@ class RoutingClient:
         """
         if not self.api_key or not partenza or not arrivo:
             return 20 # Fallback
-            
+
+        chiave_cache = f"{partenza}_{arrivo}_{citta}"
+        if chiave_cache in _routing_cache:
+            return _routing_cache[chiave_cache]
+        
         try:
             url = "https://maps.googleapis.com/maps/api/directions/json"
             params = {
@@ -35,7 +42,10 @@ class RoutingClient:
                 # Google restituisce il tempo in secondi. Estraiamo il valore.
                 leg = data["routes"][0]["legs"][0]
                 secondi = leg["duration"]["value"]
-                return int(secondi / 60)
+                minuti = int(secondi / 60)
+                # SALVO IN CACHE
+                _routing_cache[chiave_cache] = minuti
+                return minuti
                 
         except Exception as e:
             print(f"Errore Google Directions API: {e}")
