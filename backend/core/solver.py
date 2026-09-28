@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from typing import List, Dict
 from external.places_db import PlacesDatabase
 from external.weather_client import WeatherClient
@@ -91,14 +91,18 @@ class ItinerarySolver:
                 continue 
 
             if orari_comuni:
+                ora_in = orari_comuni.get("da", "20:00")
+                ora_out = orari_comuni.get("a", "Nessun limite")
+
                 aperto = self._is_locale_aperto(
                     locale.get("orari_google", []), 
                     stanza.data, 
-                    orari_comuni["inizio"], 
-                    orari_comuni["fine"]
+                    str(ora_in), 
+                    str(ora_out)
                 )
+
                 if not aperto:
-                    continue
+                    continue # Scarta il locale se è chiuso
                 
             locali_validi_strict.append(locale)
 
@@ -149,27 +153,38 @@ class ItinerarySolver:
 
     def _is_locale_aperto(self, orari_google: list, data_uscita: str, ora_inizio: str, ora_fine: str) -> bool:
 
-        """Verifica matematicamente se un locale è aperto nell'intervallo richiesto."""
+        """
+        Verifica matematicamente se un locale è aperto nell'intervallo richiesto.
+        Se ora_fine è ignota (es. "Nessun limite"), garantisce 2 ore di apertura dall'arrivo.
+        """
         
         # Graceful Degradation: se Google non fornisce orari, non scartiamo il locale
         if not orari_google:
             return True 
 
         try:
-            data_obj = datetime.strptime(data_uscita, "%Y-%m-%d") # Adatta al formato che usi per stanza.data
-            
+
+            #Adatta al formato che usi per stanza.data: Se è già un oggetto Data, lo usiamo direttamente. Altrimenti lo convertiamo da stringa.
+            if isinstance(data_uscita, (datetime, date)):
+                data_obj = data_uscita
+            else:
+                # split(" ")[0] serve a rimuovere l'eventuale orario se presente nella stringa
+                data_obj = datetime.strptime(str(data_uscita).split(" ")[0], "%Y-%m-%d")
+
             # Python: 0=Lunedì, 6=Domenica -> Google Places: 0=Domenica, 1=Lunedì
             giorno_google = (data_obj.weekday() + 1) % 7
             
-            # Conversione orari utente in minuti partendo da mezzanotte
+            # Conversione orari utente in minuti 
             h_in, m_in = map(int, ora_inizio.split(":"))
-            h_out, m_out = map(int, ora_fine.split(":"))
             target_start = h_in * 60 + m_in
-            target_end = h_out * 60 + m_out
-            
-            # Se l'uscita finisce dopo mezzanotte (es. 20:00 - 02:00)
-            if target_end <= target_start:
-                target_end += 24 * 60
+            if isinstance(ora_fine, str) and ":" in ora_fine:
+                h_out, m_out = map(int, ora_fine.split(":"))
+                target_end = h_out * 60 + m_out
+                if target_end <= target_start:
+                    target_end += 24 * 60
+            else:
+                # Se c'è scritto "Nessun limite", garantiamo che resti aperto 2 ore dopo l'arrivo
+                target_end = target_start + 120
                 
         except Exception as e:
             print(f"Errore parsing orari, salto filtro: {e}")
