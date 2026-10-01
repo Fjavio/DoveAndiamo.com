@@ -121,7 +121,7 @@ class ItinerarySolver:
                 # Filtro Haversine: Scarta a priori i locali distanti più di 3.5 km in linea d'aria
                 if loc1.get("lat") and loc2.get("lat"):
                     distanza_km = self._calcola_distanza_haversine(loc1["lat"], loc1["lng"], loc2["lat"], loc2["lng"])
-                    if distanza_km > 3.5:
+                    if distanza_km > 10:
                         continue # Evita di calcolare budget, orari e routing per posti lontanissimi
 
                 # Budget Condiviso
