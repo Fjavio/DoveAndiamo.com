@@ -318,7 +318,7 @@ else:
                                 budget_mostrato = f"{vincoli['budget_cap']}€"
 
                             st.info(
-                                f"⏱️ **Si esce alle:** {vincoli['orario_comune']['da']}\n\n"
+                                f"⏱️ **Si esce alle:** {(vincoli.get('orario_comune') or {}).get('da', 'nessun orario comune')}\n\n"
                                 f"💰 **Budget Max concordato:** {budget_mostrato}\n\n"
                                 f"🥗 **Diete/Intolleranze rispettate:** {', '.join(vincoli['restrizioni']).capitalize() or 'Nessuna'}\n\n"
                                 f"🌧️ **Meteo previsto:** {'Pioverà (Locali all\'aperto esclusi)' if vincoli['piovera'] else 'Sereno'}"
@@ -327,7 +327,7 @@ else:
                             # Risultati Locali
                             locali = dati.get('locali_proposti', [])
                             if not locali:
-                                st.error("😭 **Nessun locale trovato!** I vincoli incrociati sono troppo stringenti (neanche allentando il budget si sono trovate opzioni).")
+                                st.error(f"**Nessun locale trovato!** {dati.get('esito', '')}")
                             else:
                                 st.markdown("### 🏆 I migliori locali per voi:")
                                 for i, loc in enumerate(locali[:3]): 

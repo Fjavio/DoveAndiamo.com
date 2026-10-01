@@ -17,31 +17,45 @@ class ItinerarySolver:
         self.weather_client = WeatherClient()
         self.routing_client = RoutingClient()
 
+    @staticmethod
+    def _minuti(orario: str):
+        """'HH:MM' -> minuti dalla mezzanotte. Gli orari prima delle 6:00 sono dopo mezzanotte (+24h)."""
+        try:
+            h, m = map(int, str(orario).strip().split(":")[:2])
+        except (ValueError, AttributeError):
+            return None
+        minuti = h * 60 + m
+        return minuti + 24 * 60 if h < 6 else minuti
+
+    @staticmethod
+    def _orario(minuti: int) -> str:
+        return f"{(minuti // 60) % 24:02d}:{minuti % 60:02d}"
+
     def _calcola_intersezione_orari(self, stanza: any, partecipanti: List[any]) -> Dict[str, str]:
         orario_base = stanza.data.strftime("%H:%M")
-        max_start = "00:00"
-        min_end = "23:59"
-        ha_vincoli = False
-        
-        for p in partecipanti:
-            if p.disponibile_da:
-                max_start = max(max_start, p.disponibile_da)
-                ha_vincoli = True
-            if p.disponibile_a:
-                min_end = min(min_end, p.disponibile_a)
-                ha_vincoli = True
+        inizi = [self._minuti(p.disponibile_da) for p in partecipanti if p.disponibile_da]
+        fini = [self._minuti(p.disponibile_a) for p in partecipanti if p.disponibile_a]
+        inizi = [m for m in inizi if m is not None]
+        fini = [m for m in fini if m is not None]
 
-        if not ha_vincoli:
+        if not inizi and not fini:
             return {"da": orario_base, "a": "Nessun limite"}
+        max_start = max(inizi + [self._minuti(orario_base)])
+        if not fini:
+            return {"da": self._orario(max_start), "a": "Nessun limite"}
+        min_end = min(fini)
         if max_start >= min_end:
-            return None 
-        return {"da": max_start, "a": min_end}
+            return None
+        return {"da": self._orario(max_start), "a": self._orario(min_end)}
 
     def _calcola_budget_gruppo(self, partecipanti: List[any]) -> float:
         budget_min = 9999.0
         for p in partecipanti:
             # Sfruttiamo il nuovo campo budget_totale se esiste, altrimenti il fallback sul vecchio budget_max
-            b = p.budget_totale or p.budget_max
+            b = p.budget_totale or getattr(p, "budget_max", None)
+            if not b:
+                per_tappa = [t.get("budget") for t in (p.tappa_1, p.tappa_2) if t and t.get("budget")]
+                b = sum(per_tappa) if per_tappa else None
             if b and b < budget_min:
                 budget_min = b
         return budget_min if budget_min != 9999.0 else None
@@ -60,6 +74,16 @@ class ItinerarySolver:
         budget_max = self._calcola_budget_gruppo(partecipanti)
         restrizioni = self._estrai_restrizioni_comuni(partecipanti)
         pioverà = self.weather_client.check_rain(stanza.citta, stanza.data)
+
+        if orari_comuni is None:
+            return {
+                "vincoli_gruppo": {
+                    "orario_comune": None, "budget_cap": budget_max, "restrizioni": restrizioni,
+                    "desideri_soddisfatti": [], "piovera": pioverà, "vincoli_rilassati": False
+                },
+                "locali_proposti": [],
+                "esito": "😭 Gli orari dei partecipanti non si sovrappongono: nessuna fascia oraria comune."
+            }
         
         # RILEVAMENTO MODALITÀ (Singola vs Multi-Tappa)
         is_multi = any(p.multi_tappa for p in partecipanti)
@@ -86,7 +110,7 @@ class ItinerarySolver:
         # GENERAZIONE DEL POOL (Usando le preferenze mediate!)
         locali_t1 = self.places_db.cerca_locali_tappa(stanza.citta, tipo_t1, pref_t1_mediate, restrizioni)
         
-        ora_in = orari_comuni.get("da", "20:00") if orari_comuni else "20:00"
+        ora_in = orari_comuni.get("da", "20:00")
         locali_t1 = [l for l in locali_t1 if not (pioverà and l.get("all_aperto")) and self._is_locale_aperto(l.get("orari_google", []), stanza.data, str(ora_in), "Nessun limite")]
         
         locali_finali = []
@@ -106,6 +130,8 @@ class ItinerarySolver:
                 if locali_finali:
                     vincoli_rilassati = True
                     messaggio_compromesso = "⚠️ Applicato lieve compromesso economico sul budget."
+            if not locali_finali:
+                messaggio_compromesso = "😭 Nessun locale rispetta insieme budget, orari, meteo e restrizioni alimentari."
                     
         else:
             # LOGICA MULTI-TAPPA (ESPLOSIONE COMBINATORIA): ipotizziamo che per tappa_2 il filtro delle restrizioni alimentari non sia imprenscindibile
@@ -115,41 +141,46 @@ class ItinerarySolver:
             combinazioni = list(itertools.product(locali_t1, locali_t2))
             
             # Calcolo dinamico della Timeline Concatenata (stimiamo 2 ore per la Tappa 1)
-            h_in, m_in = map(int, str(ora_in).split(":"))
-            h_in_t2 = (h_in + 2) % 24
-            ora_in_t2 = f"{h_in_t2:02d}:{m_in:02d}"
+            ora_in_t2 = self._orario(self._minuti(ora_in) + 120)
             
-            combinazioni_valide = []
-            for loc1, loc2 in combinazioni:
-                # Filtro Haversine: Scarta a priori i locali distanti più di tot km in linea d'aria
-                if loc1.get("lat") and loc2.get("lat"):
-                    distanza_km = self._calcola_distanza_haversine(loc1["lat"], loc1["lng"], loc2["lat"], loc2["lng"])
-                    if distanza_km > 10:
-                        continue # Evita di calcolare budget, orari e routing per posti lontanissimi
+            def combina(budget):
+                combinazioni_valide = []
+                for loc1, loc2 in combinazioni:
+                    # Filtro Haversine: Scarta a priori i locali distanti più di tot km in linea d'aria
+                    if loc1.get("lat") and loc2.get("lat"):
+                        distanza_km = self._calcola_distanza_haversine(loc1["lat"], loc1["lng"], loc2["lat"], loc2["lng"])
+                        if distanza_km > 10:
+                            continue # Evita di calcolare budget, orari e routing per posti lontanissimi
 
-                # Budget Condiviso
-                costo_totale = loc1["costo_medio"] + loc2["costo_medio"]
+                    # Budget Condiviso
+                    costo_totale = loc1["costo_medio"] + loc2["costo_medio"]
                 
-                if budget_max and costo_totale > budget_max:
-                    continue
+                    if budget and costo_totale > budget:
+                        continue
                     
-                # Timeline Concatenata (il secondo locale deve essere aperto quando finisce il primo)
-                if not self._is_locale_aperto(loc2.get("orari_google", []), stanza.data, ora_in_t2, "Nessun limite"):
-                    continue
+                    # Timeline Concatenata (il secondo locale deve essere aperto quando finisce il primo)
+                    if not self._is_locale_aperto(loc2.get("orari_google", []), stanza.data, ora_in_t2, "Nessun limite"):
+                        continue
                     
-                # SUPER-ENTITÀ: Uniamo i due nodi in uno per il Frontend
-                combo = {
-                    "nome": f"{loc1['nome']} ➔ {loc2['nome']}",
-                    "tipo": f"{loc1['tipo'].capitalize()} e {loc2['tipo'].capitalize()}",
-                    "zona": f"Inizio: {loc1['zona'].split(',')[0]} | Poi: {loc2['zona'].split(',')[0]}",
-                    "costo_medio": costo_totale,
-                    "minuti_di_guida": 0 
-                }
-                combo["_zona_per_routing"] = loc1["zona"] # Percorso casa -> locale 1
-                combo["_zona_tappa2"] = loc2["zona"]      # NUOVO: Memorizziamo l'indirizzo del locale 2
-                combinazioni_valide.append(combo)
-                
-            locali_finali = combinazioni_valide
+                    # SUPER-ENTITÀ: Uniamo i due nodi in uno per il Frontend
+                    combo = {
+                        "nome": f"{loc1['nome']} ➔ {loc2['nome']}",
+                        "tipo": f"{loc1['tipo'].capitalize()} e {loc2['tipo'].capitalize()}",
+                        "zona": f"Inizio: {loc1['zona'].split(',')[0]} | Poi: {loc2['zona'].split(',')[0]}",
+                        "costo_medio": costo_totale,
+                        "minuti_di_guida": 0 
+                    }
+                    combo["_zona_per_routing"] = loc1["zona"] # Percorso casa -> locale 1
+                    combo["_zona_tappa2"] = loc2["zona"]      # NUOVO: Memorizziamo l'indirizzo del locale 2
+                    combinazioni_valide.append(combo)
+                return combinazioni_valide
+
+            locali_finali = combina(budget_max)
+            if not locali_finali and budget_max:  # Graceful Degradation sul budget, come per la singola tappa
+                locali_finali = combina(budget_max * 1.2)
+                if locali_finali:
+                    vincoli_rilassati = True
+                    messaggio_compromesso = "⚠️ Applicato lieve compromesso economico sul budget."
             if not locali_finali:
                 messaggio_compromesso = "😭 I vincoli combinati (Budget Condiviso + Orari Sequenziali) sono troppo stringenti."
 
@@ -203,15 +234,15 @@ class ItinerarySolver:
 
             giorno_google = (data_obj.weekday() + 1) % 7
             
-            h_in, m_in = map(int, ora_inizio.split(":"))
-            target_start = h_in * 60 + m_in
+            target_start = self._minuti(ora_inizio)
             if isinstance(ora_fine, str) and ":" in ora_fine:
-                h_out, m_out = map(int, ora_fine.split(":"))
-                target_end = h_out * 60 + m_out
+                target_end = self._minuti(ora_fine)
                 if target_end <= target_start:
                     target_end += 24 * 60
             else:
                 target_end = target_start + 120
+            if target_start is None or target_end is None:
+                return True
                 
         except Exception as e:
             print(f"Errore parsing orari, salto filtro: {e}")
