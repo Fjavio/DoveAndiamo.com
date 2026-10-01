@@ -145,24 +145,37 @@ class ItinerarySolver:
                     "costo_medio": costo_totale,
                     "minuti_di_guida": 0 
                 }
-                combo["_zona_per_routing"] = loc1["zona"] # Calcoliamo il percorso casa -> locale 1
+                combo["_zona_per_routing"] = loc1["zona"] # Percorso casa -> locale 1
+                combo["_zona_tappa2"] = loc2["zona"]      # NUOVO: Memorizziamo l'indirizzo del locale 2
                 combinazioni_valide.append(combo)
                 
             locali_finali = combinazioni_valide
             if not locali_finali:
                 messaggio_compromesso = "😭 I vincoli combinati (Budget Condiviso + Orari Sequenziali) sono troppo stringenti."
 
-        # BOUNDARY ROUTING (Calcolo Distanze)
+        # BOUNDARY ROUTING (Calcolo Distanze Totali)
         for locale in locali_finali:
-            zona_dest = locale.get("_zona_per_routing", locale["zona"])
-            tempi = []
+            zona_tappa1 = locale.get("_zona_per_routing", locale["zona"])
+            zona_tappa2 = locale.get("_zona_tappa2") # Se esiste, è un itinerario multi-tappa
+            
+            # Calcoliamo il tempo di spostamento interno (Locale 1 ➔ Locale 2)
+            tempo_interno = 0
+            if zona_tappa2:
+                tempo_interno = self.routing_client.calcola_tempo_percorso(zona_tappa1, zona_tappa2, stanza.citta)
+            
+            # Calcoliamo chi ci mette di più ad arrivare al Locale 1 da casa
+            tempi_da_casa = []
             for p in partecipanti:
                 if p.zona_partenza:
-                    minuti = self.routing_client.calcola_tempo_percorso(p.zona_partenza, zona_dest, stanza.citta)
-                    tempi.append(minuti)
-            locale["minuti_di_guida"] = max(tempi) if tempi else 0
+                    minuti_casa_t1 = self.routing_client.calcola_tempo_percorso(p.zona_partenza, zona_tappa1, stanza.citta)
+                    tempi_da_casa.append(minuti_casa_t1)
+            
+            tempo_max_arrivo = max(tempi_da_casa) if tempi_da_casa else 0
+            
+            # Il tempo totale mostrato all'utente sarà la somma dei due viaggi
+            locale["minuti_di_guida"] = tempo_max_arrivo + tempo_interno
 
-        # Ordinamento (ottimizza il tempo massimo di guida del gruppo)
+        # Ordinamento (ottimizza il tempo massimo di guida totale del gruppo)
         locali_finali.sort(key=lambda x: x.get("minuti_di_guida", 999))
 
         return {
