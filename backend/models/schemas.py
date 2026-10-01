@@ -35,41 +35,31 @@ class RoomResponse(BaseModel):
 # ==========================================
 # MODELLI DI OUTPUT (Estratti dall'LLM)
 # ==========================================
+class FaseUscita(BaseModel):
+    """Dettagli specifici per una singola tappa dell'uscita"""
+    tipo_locale: Optional[str] = Field(None, description="Es. 'pizzeria', 'ristorante', 'pub', 'discoteca', 'bar', 'gelateria'.")
+    budget: Optional[float] = Field(None, description="Budget dedicato esclusivamente a questa fase.")
+    preferenze: List[str] = Field(default_factory=list, description="Atmosfera o desideri per questa fase (es. 'tranquillo', 'musica dal vivo').")
 
 class ExtractedProfile(BaseModel):
-    """Struttura dati che pretendiamo da Groq dopo l'analisi del testo (RF03)"""
-    budget_max: Optional[float] = Field(
-        None, description="Budget massimo in euro. Null se non specificato."
-    )
-    disponibile_da: Optional[str] = Field(
-        None, description="Orario di inizio disponibilità nel formato HH:MM (es. '18:30')."
-    )
-    disponibile_a: Optional[str] = Field(
-        None, description="Orario limite per il rientro nel formato HH:MM (es. '23:30')."
-    )
-    restrizioni_alimentari: List[str] = Field(
-        default_factory=list, description="Lista di restrizioni (es. ['vegetariano', 'celiaco'])."
-    )
-    zona_partenza: Optional[str] = Field(
-        None, description="Quartiere o zona geografica di partenza."
-    )
-    mezzo_trasporto: Optional[str] = Field(
-        None, description="Mezzo utilizzato (es. 'auto', 'mezzi pubblici', 'piedi')."
-    )
-    mezzi_esclusi: List[str] = Field(
-        default_factory=list, description="Mezzi che l'utente NON vuole o non può prendere (es. ['metro', 'piedi'])."
-    )
-    importanza_distanza: Optional[str] = Field(
-        None, description="Quanto conta non allontanarsi. Valori: 'bassa', 'media', 'alta'."
-    )
-    preferenze_aggiuntive: List[str] = Field(
-        default_factory=list, description="Desideri extra legati all'atmosfera, tipo di locale o servizi, inclusi suggerimenti su DOVE andare (es. 'musica dal vivo', 'romantico', 'tranquillo', 'al centro storico')."
-    )
+    """Struttura dati evoluta per supportare il multi-tappa (RF03)"""
     
-    # Questo campo implementa il requisito RF04 (Richiesta Chiarimento)
-    richiesta_chiarimento: Optional[str] = Field(
-        None, description="Domanda da porre all'utente in caso di contraddizioni logiche o luoghi incomprensibili."
-    )
+    # --- Gestione Tappe ---
+    multi_tappa: bool = Field(False, description="True se l'utente vuole esplicitamente fare due cose (es. 'cena e poi drink').")
+    budget_totale: Optional[float] = Field(None, description="Budget massimo per l'intera serata, se non lo divide per tappe.")
+    tappa_1: Optional[FaseUscita] = Field(None, description="Dettagli della prima tappa (es. la cena). Valorizzato di default.")
+    tappa_2: Optional[FaseUscita] = Field(None, description="Dettagli della seconda tappa (es. il dopocena). Null se vuole fare una sola cosa.")
+    
+    # --- Vincoli Globali (non cambiano tra una tappa e l'altra) ---
+    disponibile_da: Optional[str] = Field(None, description="Orario di inizio HH:MM.")
+    disponibile_a: Optional[str] = Field(None, description="Orario limite rientro HH:MM.")
+    restrizioni_alimentari: List[str] = Field(default_factory=list, description="Es. ['vegetariano', 'celiaco'].")
+    zona_partenza: Optional[str] = Field(None, description="Quartiere di partenza.")
+    mezzo_trasporto: Optional[str] = Field(None)
+    mezzi_esclusi: List[str] = Field(default_factory=list)
+    importanza_distanza: Optional[str] = Field(None)
+    
+    richiesta_chiarimento: Optional[str] = Field(None, description="Domanda in caso di input incomprensibile o contraddittorio.")
 
 class LLMResponse(BaseModel):
     """Risposta standardizzata restituita al client dopo l'estrazione"""

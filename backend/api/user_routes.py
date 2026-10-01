@@ -29,7 +29,7 @@ async def process_user_message(request: UserMessageRequest, db: Session = Depend
         ).first()
         
         if partecipante:
-            partecipante.budget_max = response.profile.budget_max
+            # Vincoli Globali
             partecipante.disponibile_da = response.profile.disponibile_da
             partecipante.disponibile_a = response.profile.disponibile_a
             partecipante.zona_partenza = response.profile.zona_partenza
@@ -37,7 +37,15 @@ async def process_user_message(request: UserMessageRequest, db: Session = Depend
             partecipante.mezzi_esclusi = response.profile.mezzi_esclusi
             partecipante.importanza_distanza = response.profile.importanza_distanza
             partecipante.restrizioni_alimentari = response.profile.restrizioni_alimentari
-            partecipante.preferenze_aggiuntive = response.profile.preferenze_aggiuntive
+            
+            # Nuovi campi Multi-Tappa
+            partecipante.multi_tappa = response.profile.multi_tappa
+            partecipante.budget_totale = response.profile.budget_totale
+            
+            # Pydantic restituisce oggetti, noi li convertiamo in dict per il JSON di SQLite
+            partecipante.tappa_1 = response.profile.tappa_1.dict() if response.profile.tappa_1 else None
+            partecipante.tappa_2 = response.profile.tappa_2.dict() if response.profile.tappa_2 else None
+            
             db.commit()
         
         return response
