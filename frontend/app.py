@@ -190,6 +190,7 @@ else:
                 if not partecipanti:
                     st.info("Nessuno ha ancora inserito le proprie preferenze. Inizia tu!")
                 else:
+                    """
                     for p in partecipanti:
                         with st.expander(f"👤 {p['nome']}"):
                             # Adattiamo il budget al nuovo modello
@@ -200,6 +201,44 @@ else:
                             st.write(f"**Restrizioni:** {', '.join(p.get('restrizioni_alimentari', [])) or 'Nessuna'}")
                             
                             # NUOVO: Mostriamo l'intento Multi-Tappa
+                            if p.get('multi_tappa'):
+                                t1 = p.get('tappa_1', {})
+                                t2 = p.get('tappa_2', {})
+                                pref_t1 = ", ".join(t1.get('preferenze', [])) or "Nessuna specifica"
+                                pref_t2 = ", ".join(t2.get('preferenze', [])) or "Nessuna specifica"
+                                
+                                st.info(
+                                    f"🔄 **Vuole fare due tappe!**\n\n"
+                                    f"🍕 **Fase 1 ({t1.get('tipo_locale', 'Pasto')}):** {pref_t1}\n\n"
+                                    f"🍻 **Fase 2 ({t2.get('tipo_locale', 'Dopocena')}):** {pref_t2}"
+                                )
+                    """
+                    for p in partecipanti:
+                        with st.expander(f"👤 {p['nome']}"):
+                            # PRIVACY CHECK: Questo utente è quello correntemente loggato? Mostriamo i suoi dati sensibili solo a lui
+                            is_me = (p['nome'] == st.session_state.utente_loggato)
+                            
+                            # BUDGET (Dato sensibile)
+                            if is_me:
+                                budget = p.get('budget_totale') or p.get('budget_max') or 'N/D'
+                                st.write(f"**Budget Serata:** {budget} €")
+                            else:
+                                st.write("**Budget Serata:** 🔒 *Nascosto per privacy*")
+                            
+                            # ORARI E ZONA (Dati logistici, visibili al gruppo per organizzarsi)
+                            st.write(f"**Disponibilità:** {p.get('disponibile_da', 'N/D')} - {p.get('disponibile_a', 'N/D')}")
+                            st.write(f"**Zona:** {p.get('zona_partenza', 'N/D')}")
+                            
+                            # RESTRIZIONI ALIMENTARI (Dato sensibile)
+                            if is_me:
+                                st.write(f"**Restrizioni:** {', '.join(p.get('restrizioni_alimentari', [])) or 'Nessuna'}")
+                            else:
+                                if p.get('restrizioni_alimentari'):
+                                    st.write("**Restrizioni:** 🔒 *Presenti ma nascoste*")
+                                else:
+                                    st.write("**Restrizioni:** Nessuna")
+                            
+                            # Mostriamo l'intento Multi-Tappa
                             if p.get('multi_tappa'):
                                 t1 = p.get('tappa_1', {})
                                 t2 = p.get('tappa_2', {})

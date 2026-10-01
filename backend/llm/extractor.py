@@ -133,3 +133,42 @@ async def generate_group_explanation(vincoli: dict, locali: list) -> str:
         return response.choices[0].message.content
     except Exception:
         return "Ecco la proposta perfetta calcolata in base ai vostri vincoli incrociati!"
+
+SYSTEM_PROMPT_MEDIATOR = """
+Sei il "Mediatore AI" di un gruppo di amici che sta organizzando un'uscita.
+Riceverai una lista di desideri (atmosfere, zone, idee) espressi da diverse persone per una specifica tappa della serata (es. il dopocena).
+Il tuo compito è individuare eventuali CONFLITTI (es. "centro" vs "Mergellina", oppure "posto tranquillo" vs "discoteca caotica") e trovare il MIGLIOR COMPROMESSO geografico o logico.
+Restituisci ESCLUSIVAMENTE un oggetto JSON con la chiave "query_mediata" contenente una stringa breve (max 4-5 parole) ottimizzata per la ricerca su Google Places.
+Esempio: se uno vuole "centro" e l'altro "mare a mergellina", il compromesso geografico è la "Riviera di Chiaia".
+Esempio: se uno vuole "tranquillo" e l'altro "caotico", il compromesso è "lounge bar vivace".
+Se non ci sono conflitti, limitati a riassumere i desideri nella stringa in modo elegante.
+"""
+
+async def mediate_preferences(preferences: list, tipo_locale: str, citta: str) -> list:
+    """Interviene se ci sono più preferenze, usando l'LLM per trovare un compromesso."""
+    # Se c'è una sola preferenza o nessuna, non serve mediare
+    if not preferences or len(preferences) <= 1:
+        return preferences
+
+    prompt = f"Città: {citta}\nFase: {tipo_locale}\nDesideri contrastanti del gruppo: {preferences}"
+    
+    try:
+        response = await client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT_MEDIATOR},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.4, # Un po' di creatività per trovare il compromesso
+            response_format={"type": "json_object"}
+        )
+        
+        risultato = json.loads(response.choices[0].message.content)
+        query_ottimizzata = risultato.get("query_mediata", " ".join(preferences))
+        
+        print(f"🤖 MEDIAZIONE AI COMPLETATA: {preferences} -> {query_ottimizzata}")
+        return [query_ottimizzata] # Restituiamo una lista con 1 solo elemento pulito
+        
+    except Exception as e:
+        print(f"Errore durante la mediazione AI: {e}")
+        return preferences # Fallback: restituisce la lista originale

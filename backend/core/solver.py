@@ -5,6 +5,7 @@ from external.places_db import PlacesDatabase
 from external.weather_client import WeatherClient
 from external.routing_client import RoutingClient
 import math
+from llm.extractor import mediate_preferences
 
 class ItinerarySolver:
     """
@@ -53,14 +54,14 @@ class ItinerarySolver:
                     restrizioni.update([r.lower() for r in p.restrizioni_alimentari])
         return list(restrizioni)
 
-    def elabora_proposta(self, stanza: any, partecipanti: List[any]) -> Dict:
-        # 1. VINCOLI GLOBALI
+    async def elabora_proposta(self, stanza: any, partecipanti: List[any]) -> Dict: #async perche stiamo chiamando un LLM asincrono
+        # VINCOLI GLOBALI
         orari_comuni = self._calcola_intersezione_orari(stanza, partecipanti)
         budget_max = self._calcola_budget_gruppo(partecipanti)
         restrizioni = self._estrai_restrizioni_comuni(partecipanti)
         pioverà = self.weather_client.check_rain(stanza.citta, stanza.data)
         
-        # 2. RILEVAMENTO MODALITÀ (Singola vs Multi-Tappa)
+        # RILEVAMENTO MODALITÀ (Singola vs Multi-Tappa)
         is_multi = any(p.multi_tappa for p in partecipanti)
         
         pref_t1, pref_t2 = set(), set()
@@ -77,9 +78,13 @@ class ItinerarySolver:
                 
         if not tipo_t1: tipo_t1 = "ristorante"
         if is_multi and not tipo_t2: tipo_t2 = "pub"
-        
-        # 3. GENERAZIONE DEL POOL (Chiamate API Isolate)
-        locali_t1 = self.places_db.cerca_locali_tappa(stanza.citta, tipo_t1, list(pref_t1), restrizioni)
+
+        # L'INTERVENTO DEL MEDIATORE AI: Se ci sono desideri multipli, l'AI risolve i conflitti geografici e logici
+        pref_t1_mediate = await mediate_preferences(list(pref_t1), tipo_t1, stanza.citta)
+        pref_t2_mediate = await mediate_preferences(list(pref_t2), tipo_t2, stanza.citta) if is_multi else []
+
+        # GENERAZIONE DEL POOL (Usando le preferenze mediate!)
+        locali_t1 = self.places_db.cerca_locali_tappa(stanza.citta, tipo_t1, pref_t1_mediate, restrizioni)
         
         ora_in = orari_comuni.get("da", "20:00") if orari_comuni else "20:00"
         locali_t1 = [l for l in locali_t1 if not (pioverà and l.get("all_aperto")) and self._is_locale_aperto(l.get("orari_google", []), stanza.data, str(ora_in), "Nessun limite")]
@@ -89,7 +94,6 @@ class ItinerarySolver:
         messaggio_compromesso = "Calcolo completato nel rispetto di tutti i vincoli incrociati."
         termini_soddisfatti = list(pref_t1) + list(pref_t2)
         
-        # 4. MOTORE MATEMATICO
         if not is_multi:
             # --- LOGICA SINGOLA TAPPA ---
             for loc in locali_t1:
@@ -104,9 +108,8 @@ class ItinerarySolver:
                     messaggio_compromesso = "⚠️ Applicato lieve compromesso economico sul budget."
                     
         else:
-            # --- LOGICA MULTI-TAPPA (ESPLOSIONE COMBINATORIA) ---
-            # La tappa 2 (es. cocktail bar) non richiede il filtro delle restrizioni alimentari severe
-            locali_t2 = self.places_db.cerca_locali_tappa(stanza.citta, tipo_t2, list(pref_t2), []) 
+            # LOGICA MULTI-TAPPA (ESPLOSIONE COMBINATORIA): ipotizziamo che per tappa_2 il filtro delle restrizioni alimentari non sia imprenscindibile
+            locali_t2 = self.places_db.cerca_locali_tappa(stanza.citta, tipo_t2, pref_t2_mediate, [])
             locali_t2 = [l for l in locali_t2 if not (pioverà and l.get("all_aperto"))]
             
             combinazioni = list(itertools.product(locali_t1, locali_t2))
@@ -118,7 +121,7 @@ class ItinerarySolver:
             
             combinazioni_valide = []
             for loc1, loc2 in combinazioni:
-                # Filtro Haversine: Scarta a priori i locali distanti più di 3.5 km in linea d'aria
+                # Filtro Haversine: Scarta a priori i locali distanti più di tot km in linea d'aria
                 if loc1.get("lat") and loc2.get("lat"):
                     distanza_km = self._calcola_distanza_haversine(loc1["lat"], loc1["lng"], loc2["lat"], loc2["lng"])
                     if distanza_km > 10:
@@ -134,7 +137,7 @@ class ItinerarySolver:
                 if not self._is_locale_aperto(loc2.get("orari_google", []), stanza.data, ora_in_t2, "Nessun limite"):
                     continue
                     
-                # SUPER-ENTITÀ: Uniamo i due nodi in uno per far felice il Frontend
+                # SUPER-ENTITÀ: Uniamo i due nodi in uno per il Frontend
                 combo = {
                     "nome": f"{loc1['nome']} ➔ {loc2['nome']}",
                     "tipo": f"{loc1['tipo'].capitalize()} e {loc2['tipo'].capitalize()}",
@@ -149,7 +152,7 @@ class ItinerarySolver:
             if not locali_finali:
                 messaggio_compromesso = "😭 I vincoli combinati (Budget Condiviso + Orari Sequenziali) sono troppo stringenti."
 
-        # 5. BOUNDARY ROUTING (Calcolo Distanze)
+        # BOUNDARY ROUTING (Calcolo Distanze)
         for locale in locali_finali:
             zona_dest = locale.get("_zona_per_routing", locale["zona"])
             tempi = []

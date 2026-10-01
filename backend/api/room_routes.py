@@ -78,7 +78,7 @@ async def generate_proposals(room_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="La stanza è vuota")
         
     solver = ItinerarySolver()
-    risultato = solver.elabora_proposta(stanza, partecipanti)
+    risultato = await solver.elabora_proposta(stanza, partecipanti) #solver ora è asincrono quindi dobbiamo aspettarlo
     
     # Chiamata al LLM per la spiegazione finale
     spiegazione = await generate_group_explanation(
