@@ -46,10 +46,18 @@ class PlacesDatabase:
 
         url = "https://places.googleapis.com/v1/places:searchText"
 
+        """
         headers = {
             "Content-Type": "application/json",
             "X-Goog-Api-Key": self.api_key,
             "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.priceLevel,places.rating,places.primaryType,places.types,places.regularOpeningHours"
+        }
+        """
+        #places.location per ottenere coordinate e calcolare distanza reale tra locali
+        headers = {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": self.api_key,
+            "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.priceLevel,places.rating,places.primaryType,places.types,places.regularOpeningHours,places.location"
         }
         
         payload = {
@@ -69,6 +77,9 @@ class PlacesDatabase:
                 for place in places:
                     nome = place.get("displayName", {}).get("text", "Locale Sconosciuto")
                     indirizzo = place.get("formattedAddress", citta)
+                    location = place.get("location", {})
+                    lat = location.get("latitude", 0.0)
+                    lng = location.get("longitude", 0.0)
                     
                     livello_prezzo = place.get("priceLevel", "PRICE_LEVEL_MODERATE")
                     mappa_prezzi = {
@@ -91,6 +102,8 @@ class PlacesDatabase:
                         "nome": nome,
                         "tipo": tipo_effettivo,
                         "zona": indirizzo,
+                        "lat": lat,          
+                        "lng": lng,      
                         "costo_medio": costo_medio,
                         "all_aperto": any(t in types for t in ["park", "campground", "zoo", "amusement_park"]),
                         "rating": place.get("rating", 0.0),

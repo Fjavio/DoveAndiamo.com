@@ -4,6 +4,7 @@ import itertools
 from external.places_db import PlacesDatabase
 from external.weather_client import WeatherClient
 from external.routing_client import RoutingClient
+import math
 
 class ItinerarySolver:
     """
@@ -117,6 +118,12 @@ class ItinerarySolver:
             
             combinazioni_valide = []
             for loc1, loc2 in combinazioni:
+                # Filtro Haversine: Scarta a priori i locali distanti più di 3.5 km in linea d'aria
+                if loc1.get("lat") and loc2.get("lat"):
+                    distanza_km = self._calcola_distanza_haversine(loc1["lat"], loc1["lng"], loc2["lat"], loc2["lng"])
+                    if distanza_km > 3.5:
+                        continue # Evita di calcolare budget, orari e routing per posti lontanissimi
+
                 # Budget Condiviso
                 costo_totale = loc1["costo_medio"] + loc2["costo_medio"]
                 
@@ -213,3 +220,13 @@ class ItinerarySolver:
                     return True
                     
         return False
+
+    def _calcola_distanza_haversine(self, lat1, lon1, lat2, lon2) -> float:
+        """Calcola la distanza in linea d'aria in KM tra due coordinate terrestri."""
+        R = 6371.0 # Raggio della Terra in km
+        lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+        return R * c
