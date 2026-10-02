@@ -1,6 +1,7 @@
 from datetime import datetime, date
 from typing import List, Dict
 import itertools
+import asyncio
 from external.places_db import PlacesDatabase
 from external.weather_client import WeatherClient
 from external.routing_client import RoutingClient
@@ -185,6 +186,20 @@ class ItinerarySolver:
                 messaggio_compromesso = "😭 I vincoli combinati (Budget Condiviso + Orari Sequenziali) sono troppo stringenti."
 
         # BOUNDARY ROUTING (Calcolo Distanze Totali)
+        tratte = set()
+        for locale in locali_finali:
+            zona_tappa1 = locale.get("_zona_per_routing", locale["zona"])
+            if locale.get("_zona_tappa2"):
+                tratte.add((zona_tappa1, locale["_zona_tappa2"]))
+            for p in partecipanti:
+                if p.zona_partenza:
+                    tratte.add((p.zona_partenza, zona_tappa1))
+        tratte = list(tratte)
+        risultati = await asyncio.gather(*[
+            asyncio.to_thread(self.routing_client.calcola_tempo_percorso, da, a, stanza.citta) for da, a in tratte
+        ])
+        tempi = dict(zip(tratte, risultati))
+
         for locale in locali_finali:
             zona_tappa1 = locale.get("_zona_per_routing", locale["zona"])
             zona_tappa2 = locale.get("_zona_tappa2") # Se esiste, è un itinerario multi-tappa
@@ -192,13 +207,13 @@ class ItinerarySolver:
             # Calcoliamo il tempo di spostamento interno (Locale 1 ➔ Locale 2)
             tempo_interno = 0
             if zona_tappa2:
-                tempo_interno = self.routing_client.calcola_tempo_percorso(zona_tappa1, zona_tappa2, stanza.citta)
+                tempo_interno = tempi[(zona_tappa1, zona_tappa2)]
             
             # Calcoliamo chi ci mette di più ad arrivare al Locale 1 da casa
             tempi_da_casa = []
             for p in partecipanti:
                 if p.zona_partenza:
-                    minuti_casa_t1 = self.routing_client.calcola_tempo_percorso(p.zona_partenza, zona_tappa1, stanza.citta)
+                    minuti_casa_t1 = tempi[(p.zona_partenza, zona_tappa1)]
                     tempi_da_casa.append(minuti_casa_t1)
             
             tempo_max_arrivo = max(tempi_da_casa) if tempi_da_casa else 0

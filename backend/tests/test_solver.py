@@ -165,3 +165,19 @@ def test_multi_tappa_somma_il_tragitto_tra_i_due_locali():
         calcola_tempo_percorso=lambda da, a, citta: 7 if da.startswith("Via Pizzeria") else 15)
     r = s.elabora_proposta(STANZA, [persona(multi_tappa=True)])
     assert r["locali_proposti"][0]["minuti_di_guida"] == 15 + 7   # casa -> cena + cena -> pub
+
+def test_routing_in_parallelo():
+    """Le chiamate a Google Directions partono insieme: 8 tratte da 0,3 s non devono richiedere 2,4 s."""
+    import time
+    ristoranti = [locale(f"R{i}", "ristorante", 15) for i in range(4)]
+
+    def lento(da, a, citta):
+        time.sleep(0.3)
+        return 10
+
+    s = crea_solver(ristoranti)
+    s.routing_client = SimpleNamespace(calcola_tempo_percorso=lento)
+    inizio = time.perf_counter()
+    r = s.elabora_proposta(STANZA, [persona(zona_partenza="Vomero"), persona(zona_partenza="Chiaia")])
+    durata = time.perf_counter() - inizio
+    assert len(nomi(r)) == 4 and durata < 1.2     # in sequenza sarebbero 8 x 0,3 = 2,4 s
