@@ -1,8 +1,9 @@
+import os
 import streamlit as st
 import requests
 from datetime import datetime, time
 
-BASE_URL = "http://127.0.0.1:8000"
+API_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 st.set_page_config(page_title="Jammo", layout="centered")
 
 # --- GESTIONE DELLO STATO ---
@@ -43,7 +44,7 @@ if st.session_state.utente_loggato is None:
                 st.session_state.utente_loggato = nickname.strip()
                 # CHIAMATA AL DB: Recupera le stanze salvate per questo utente
                 try:
-                    res = requests.get(f"{BASE_URL}/users/{nickname.strip()}/rooms")
+                    res = requests.get(f"{API_URL}/users/{nickname.strip()}/rooms")
                     if res.status_code == 200:
                         st.session_state.mie_stanze = res.json()
                 except Exception:
@@ -89,7 +90,7 @@ else:
                     with st.spinner("Ricerca e aggiunta..."):
                         try:
                             # CHIAMATA AL DB: Associa permanentemente l'utente alla stanza
-                            res = requests.post(f"{BASE_URL}/users/{st.session_state.utente_loggato}/join/{codice}")
+                            res = requests.post(f"{API_URL}/users/{st.session_state.utente_loggato}/join/{codice}")
                             
                             if res.status_code == 200:
                                 stanza_data = res.json()
@@ -150,16 +151,16 @@ else:
                 with st.spinner("Creazione in corso..."):
                     try:
                         # Crea la stanza
-                        response = requests.post(f"{BASE_URL}/rooms/", json=payload)
+                        response = requests.post(f"{API_URL}/rooms/", json=payload)
                         if response.status_code == 200:
                             room_data = response.json()
                             codice_generato = room_data['codice_invito']
                             
                             # Associa il creatore come partecipante nel DB
-                            requests.post(f"{BASE_URL}/users/{st.session_state.utente_loggato}/join/{codice_generato}")
+                            requests.post(f"{API_URL}/users/{st.session_state.utente_loggato}/join/{codice_generato}")
                             
                             # Ricarica le stanze dal DB per la sessione aggiornata
-                            res_stanze = requests.get(f"{BASE_URL}/users/{st.session_state.utente_loggato}/rooms")
+                            res_stanze = requests.get(f"{API_URL}/users/{st.session_state.utente_loggato}/rooms")
                             if res_stanze.status_code == 200:
                                 st.session_state.mie_stanze = res_stanze.json()
                             
@@ -184,7 +185,7 @@ else:
         # --- RECUPERO PARTECIPANTI ---
         st.markdown("### 👥 Chi c'è in questa stanza")
         try:
-            res_part = requests.get(f"{BASE_URL}/rooms/{stanza_corrente['id']}/participants")
+            res_part = requests.get(f"{API_URL}/rooms/{stanza_corrente['id']}/participants")
             if res_part.status_code == 200:
                 partecipanti = res_part.json()
                 if not partecipanti:
@@ -273,7 +274,7 @@ else:
                 }
                 with st.spinner("Il motore AI sta analizzando le tue preferenze... 🧠"):
                     try:
-                        response = requests.post(f"{BASE_URL}/users/extract-profile", json=payload_preferenze)
+                        response = requests.post(f"{API_URL}/users/extract-profile", json=payload_preferenze)
                         if response.status_code == 200:
                             data = response.json()
                             if data["status"] == "clarification_needed":
@@ -297,7 +298,7 @@ else:
             if st.button("🪄 Calcola Itinerario Reale", type="primary", use_container_width=True):
                 with st.spinner("Incrocio vincoli, controllo meteo e calcolo stradale in corso..."):
                     try:
-                        res_solver = requests.get(f"{BASE_URL}/rooms/{stanza_corrente['id']}/proposals")
+                        res_solver = requests.get(f"{API_URL}/rooms/{stanza_corrente['id']}/proposals")
                         if res_solver.status_code == 200:
                             dati = res_solver.json()
                             
