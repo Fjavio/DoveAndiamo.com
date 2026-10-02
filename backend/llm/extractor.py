@@ -4,7 +4,8 @@ from groq import AsyncGroq
 from models.schemas import ExtractedProfile, LLMResponse
 
 # Inizializzazione del client asincrono Groq
-client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+#client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY", "dummy-key-for-testing"))
 
 GROQ_MODEL = "qwen/qwen3.8-27b"
 
